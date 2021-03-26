@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import time
 import os
 import copy
+import torch.nn.functional as F
 
 plt.ion()   # interactive mode
 
@@ -25,7 +26,7 @@ data_transforms = {
     ]),
     'val': transforms.Compose([
         transforms.Resize((224, 224)),#transforms.Resize(256),
-        transforms.CenterCrop((224, 224)), #transforms.CenterCrop(224)
+        transforms.CenterCrop((224, 224)), #transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
@@ -41,7 +42,7 @@ data_dir = 'data/covid_data_balanced'
 image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x),
                                           data_transforms[x])
                   for x in ['train', 'val', 'test']}
-dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=64,
+dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=16,
                                              shuffle=True, num_workers=0)
               for x in ['train', 'val', 'test']}
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val', 'test']}
@@ -156,7 +157,7 @@ def visualize_model(model, num_images=6):
                 images_so_far += 1
                 ax = plt.subplot(num_images//2, 2, images_so_far)
                 ax.axis('off')
-                ax.set_title('predicted: {}'.format(class_names[preds[j]]))
+                ax.set_title('predicted: {} , real : {}'.format(class_names[preds[j]], labels))
                 imshow(inputs.cpu().data[j])
 
                 if images_so_far == num_images:
@@ -164,11 +165,30 @@ def visualize_model(model, num_images=6):
                     return
         model.train(mode=was_training)
 
-model_ft = models.resnet152(pretrained=True)
-num_ftrs = model_ft.fc.in_features
-# Here the size of each output sample is set to 2.
+
+class Model(nn.Module):
+    def __init__(self, class_num):
+        super().__init__()
+        self.cnn = models.resnet152(pretrained=True)
+        # for param in self.cnn.parameters():
+        #     param.requires_grad = False
+        num_ftrs = self.cnn.fc.in_features
+        self.cnn.fc = nn.Linear(num_ftrs, int(num_ftrs/2))
+        self.fc1 = nn.Linear(int(num_ftrs/2), int(num_ftrs/2))
+        self.fc2 = nn.Linear(int(num_ftrs/2), class_num)
+
+    def forward(self, image):
+        x = self.cnn(image)
+
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+model_ft = Model(len(class_names))#models.resnet152(pretrained=True)
+#num_ftrs = model_ft.fc.in_features
 # Alternatively, it can be generalized to nn.Linear(num_ftrs, len(class_names)).
-model_ft.fc = nn.Linear(num_ftrs, 2)
+#model_ft.fc = nn.Linear(num_ftrs, len(class_names))
 
 model_ft = model_ft.to(device)
 
@@ -181,32 +201,32 @@ optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
 
 model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                       num_epochs=25)
+                       num_epochs=200)
 visualize_model(model_ft)
 
-model_conv = torchvision.models.resnet18(pretrained=True)
-for param in model_conv.parameters():
-    param.requires_grad = False
+# model_conv = torchvision.models.resnet18(pretrained=True)
+# for param in model_conv.parameters():
+#     param.requires_grad = False
+#
+# # Parameters of newly constructed modules have requires_grad=True by default
+# num_ftrs = model_conv.fc.in_features
+# model_conv.fc = nn.Linear(num_ftrs, 2)
+#
+# model_conv = model_conv.to(device)
+#
+# criterion = nn.CrossEntropyLoss()
+#
+# # Observe that only parameters of final layer are being optimized as
+# # opposed to before.
+# optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
+#
+# # Decay LR by a factor of 0.1 every 7 epochs
+# exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+#
+# model_conv = train_model(model_conv, criterion, optimizer_conv,
+#                          exp_lr_scheduler, num_epochs=25)
 
-# Parameters of newly constructed modules have requires_grad=True by default
-num_ftrs = model_conv.fc.in_features
-model_conv.fc = nn.Linear(num_ftrs, 2)
-
-model_conv = model_conv.to(device)
-
-criterion = nn.CrossEntropyLoss()
-
-# Observe that only parameters of final layer are being optimized as
-# opposed to before.
-optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
-
-# Decay LR by a factor of 0.1 every 7 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
-
-model_conv = train_model(model_conv, criterion, optimizer_conv,
-                         exp_lr_scheduler, num_epochs=25)
-
-visualize_model(model_conv)
+# visualize_model(model_conv)
 
 plt.ioff()
 plt.show()
