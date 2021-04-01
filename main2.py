@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import numpy as np
 import torchvision
+from torch.utils.data import Dataset
 from torchvision import datasets, models, transforms
 import matplotlib.pyplot as plt
 import time
@@ -15,8 +16,21 @@ import torch.nn.functional as F
 import torchdata as td
 
 
+class MyDataClass(Dataset):
+    def __init__(self, image_path, transform=None):
+        super(MyDataClass, self).__init__()
+        self.data = datasets.ImageFolder(image_path,  transform)#[datasets.ImageFolder(image_path + x,  transform) for x in classes_list]   # Create data from folder
+
+    def __getitem__(self, idx):
+        x, y = self.data[idx]
+        return x, y
+
+    def __len__(self):
+        return len(self.data)
+
+
 plt.ion()   # interactive mode
-data_dir_all = 'data/ImageList/All'
+data_dir_all = 'data/ImageList/'
 
 path, dirs, files = next(os.walk(data_dir_all))
 total_count = len(files)
@@ -35,19 +49,21 @@ data_transforms = torchvision.transforms.Compose(
 )
 
 
-model_dataset = td.datasets.WrapDataset(data_dir_all)#torchvision.datasets.ImageFolder(data_dir_all))
+model_dataset = MyDataClass(data_dir_all, data_transforms)#datasets.ImageFolder(data_dir_all)#torchvision.datasets.ImageFolder(data_dir_all))
 
 # Also you shouldn't use transforms here but below
-train_count = int(0.7 * total_count)
-valid_count = int(0.2 * total_count)
-test_count = total_count - train_count - valid_count
+train_count = int(0.7 * len(model_dataset))
+valid_count = int(0.2 * len(model_dataset))
+test_count = len(model_dataset) - train_count - valid_count
+print(train_count, valid_count, test_count, len(model_dataset))
+print(train_count+valid_count+test_count)
 train_dataset, valid_dataset, test_dataset = torch.utils.data.random_split(
     model_dataset, (train_count, valid_count, test_count)
 )
 
 # Apply transformations here only for train dataset
 
-train_dataset = train_dataset.map(data_transforms)
+#train_dataset = train_dataset.dataset.map(data_transforms)
 
 # Rest of the code goes the same
 BATCH_SIZE = 16
@@ -71,9 +87,10 @@ dataloaders = {
 #                                         data_transforms[x])
 #                  for x in ['train', 'val', 'test']}
 
-dataset_sizes = {x: len(model_dataset[x]) for x in ['train', 'val', 'test']}
-class_names = model_dataset['train'].classes
+dataset_sizes = {x: len(dataloaders[x]) for x in ['train', 'val', 'test']}
+class_names = train_dataset
 
+print(torch.cuda.get_device_name(0))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def imshow(inp, title=None):
