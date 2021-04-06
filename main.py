@@ -42,7 +42,7 @@ data_dir = 'data/covid_data_balanced'
 image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x),
                                           data_transforms[x])
                   for x in ['train', 'val', 'test']}
-dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=16,
+dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=2,
                                              shuffle=True, num_workers=0)
               for x in ['train', 'val', 'test']}
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val', 'test']}
@@ -152,13 +152,14 @@ def visualize_model(model, num_images=6):
 
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-
+            print(outputs.detach().cpu().numpy())
             for j in range(inputs.size()[0]):
                 images_so_far += 1
                 ax = plt.subplot(num_images//2, 2, images_so_far)
                 ax.axis('off')
                 ax.set_title('predicted: {} , real : {}'.format(class_names[preds[j]], labels))
                 imshow(inputs.cpu().data[j])
+                print('predicted: {} , real : {}'.format(class_names[preds[j]], labels ))
 
                 if images_so_far == num_images:
                     model.train(mode=was_training)
@@ -173,6 +174,7 @@ class Model(nn.Module):
         # for param in self.cnn.parameters():
         #     param.requires_grad = False
         num_ftrs = self.cnn.fc.in_features
+        print(num_ftrs)
         self.cnn.fc = nn.Linear(num_ftrs, int(num_ftrs/2))
         self.fc1 = nn.Linear(int(num_ftrs/2), int(num_ftrs/2))
         self.fc2 = nn.Linear(int(num_ftrs/2), class_num)
@@ -201,7 +203,7 @@ optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
 
 model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                       num_epochs=200)
+                       num_epochs=2)
 visualize_model(model_ft)
 
 # model_conv = torchvision.models.resnet18(pretrained=True)

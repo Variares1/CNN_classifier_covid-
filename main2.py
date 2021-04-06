@@ -66,7 +66,7 @@ train_dataset, valid_dataset, test_dataset = torch.utils.data.random_split(
 #train_dataset = train_dataset.dataset.map(data_transforms)
 
 # Rest of the code goes the same
-BATCH_SIZE = 16
+BATCH_SIZE = 2
 NUM_WORKER = 0
 train_dataset_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKER
