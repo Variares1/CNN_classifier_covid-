@@ -6,48 +6,83 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import numpy as np
 import torchvision
+from torch.utils.data import Dataset
 from torchvision import datasets, models, transforms
 import matplotlib.pyplot as plt
 import time
 import os
 import copy
 import torch.nn.functional as F
+import torchdata as td
+class MyDataClass(Dataset):
+    def __init__(self, image_path, transform=None):
+        super(MyDataClass, self).__init__()
+        self.data = datasets.ImageFolder(image_path,  transform) # Create data from folder
+
+    def __getitem__(self, idx):
+        x, y = self.data[idx]
+        return x, y
+
+    def __len__(self):
+        return len(self.data)
+
 
 plt.ion()   # interactive mode
+data_dir_all = 'data/ImageListBalanced'
+
+path, dirs, files = next(os.walk(data_dir_all))
+total_count = len(files)
 
 # Data augmentation and normalization for training
 # Just normalization for validation
-data_transforms = {
-    'train': transforms.Compose([
-        transforms.Resize((224, 224)),#transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]),
-    'val': transforms.Compose([
-        transforms.Resize((224, 224)),#transforms.Resize(256),
-        transforms.CenterCrop((224, 224)), #transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]),
-    'test': transforms.Compose([
-        transforms.Resize((224, 224)),  # transforms.Resize(256),
-        transforms.CenterCrop((224, 224)),  # transforms.CenterCrop(224)
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
+data_transforms = torchvision.transforms.Compose(
+    [
+        torchvision.transforms.RandomResizedCrop(224),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        ),
+    ]
+)
+
+
+model_dataset = MyDataClass(data_dir_all, data_transforms)#datasets.ImageFolder(data_dir_all)#torchvision.datasets.ImageFolder(data_dir_all))
+
+# Also you shouldn't use transforms here but below
+train_count = int(0.7 * len(model_dataset))
+valid_count = int(0.2 * len(model_dataset))
+test_count = len(model_dataset) - train_count - valid_count
+
+train_dataset, valid_dataset, test_dataset = torch.utils.data.random_split(
+    model_dataset, (train_count, valid_count, test_count)
+)
+
+print(len(train_dataset))
+# Apply transformations here only for train dataset
+
+# Rest of the code goes the same
+BATCH_SIZE = 2
+NUM_WORKER = 0
+train_dataset_loader = torch.utils.data.DataLoader(
+    train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKER
+)
+valid_dataset_loader = torch.utils.data.DataLoader(
+    valid_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKER
+)
+test_dataset_loader = torch.utils.data.DataLoader(
+    test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKER
+)
+dataloaders = {
+    "train": train_dataset_loader,
+    "val": valid_dataset_loader,
+    "test": test_dataset_loader
 }
 
-data_dir = 'data/covid_data_balanced'
-image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x),
-                                          data_transforms[x])
-                  for x in ['train', 'val', 'test']}
-dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=16,
-                                             shuffle=True, num_workers=0)
-              for x in ['train', 'val', 'test']}
-dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val', 'test']}
-class_names = image_datasets['train'].classes
+dataset_sizes = {x: len(dataloaders[x].dataset) for x in ['train', 'val', 'test']}
+class_names = train_dataset.dataset.data.classes #recupérer classeName
 
+print(torch.cuda.get_device_name(0))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def imshow(inp, title=None):
@@ -71,7 +106,7 @@ out = torchvision.utils.make_grid(inputs)
 
 imshow(out, title=[class_names[x] for x in classes])
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
+def train_model(model, criterion, optimizer, scheduler, num_epochs=40):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -203,30 +238,6 @@ exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
 model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
                        num_epochs=25)
 visualize_model(model_ft)
-
-# model_conv = torchvision.models.resnet18(pretrained=True)
-# for param in model_conv.parameters():
-#     param.requires_grad = False
-#
-# # Parameters of newly constructed modules have requires_grad=True by default
-# num_ftrs = model_conv.fc.in_features
-# model_conv.fc = nn.Linear(num_ftrs, 2)
-#
-# model_conv = model_conv.to(device)
-#
-# criterion = nn.CrossEntropyLoss()
-#
-# # Observe that only parameters of final layer are being optimized as
-# # opposed to before.
-# optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
-#
-# # Decay LR by a factor of 0.1 every 7 epochs
-# exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
-#
-# model_conv = train_model(model_conv, criterion, optimizer_conv,
-#                          exp_lr_scheduler, num_epochs=25)
-
-# visualize_model(model_conv)
 
 plt.ioff()
 plt.show()
