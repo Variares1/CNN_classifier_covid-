@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+import Classifiers, Plot, TransformData
 
 import torch
 import torch.nn as nn
@@ -85,6 +86,7 @@ class_names = train_dataset.dataset.data.classes #recupérer classeName
 print(torch.cuda.get_device_name(0))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
 def imshow(inp, title=None):
     """Imshow for Tensor."""
     inp = inp.numpy().transpose((1, 2, 0))
@@ -106,7 +108,8 @@ out = torchvision.utils.make_grid(inputs)
 
 imshow(out, title=[class_names[x] for x in classes])
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=40):
+
+def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -121,7 +124,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=40):
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
-                model.eval()   # Set model to evaluate mode
+                model.eval()  # Set model to evaluate mode
 
             running_loss = 0.0
             running_corrects = 0
@@ -174,6 +177,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=40):
     model.load_state_dict(best_model_wts)
     return model
 
+
 def visualize_model(model, num_images=6):
     was_training = model.training
     model.eval()
@@ -190,15 +194,33 @@ def visualize_model(model, num_images=6):
 
             for j in range(inputs.size()[0]):
                 images_so_far += 1
-                ax = plt.subplot(num_images//2, 2, images_so_far)
+                ax = plt.subplot(num_images // 2, 2, images_so_far)
                 ax.axis('off')
-                ax.set_title('predicted: {}'.format(class_names[preds[j]]))
+                ax.set_title('predicted: {} , real : {}'.format(class_names[preds[j]], labels))
                 imshow(inputs.cpu().data[j])
 
                 if images_so_far == num_images:
                     model.train(mode=was_training)
                     return
         model.train(mode=was_training)
+
+
+def model_to_numpy(model, type):
+    label_list = []
+    for i in dataloaders[type].dataset.indices:
+        label_list.append(dataloaders[type].dataset.dataset.data.targets[i])
+
+    output_list = []
+    with torch.no_grad():
+        for i, (inputs, labels) in enumerate(dataloaders[type]):
+            inputs = inputs.to(device)
+
+            outputs = model(inputs)
+            ##BatchSize de Dataloaders
+            for i in range(len(outputs)):
+                output_list.append(outputs[i].cpu().detach().numpy())
+
+    return output_list, label_list
 
 
 class Model(nn.Module):
@@ -208,22 +230,24 @@ class Model(nn.Module):
         # for param in self.cnn.parameters():
         #     param.requires_grad = False
         num_ftrs = self.cnn.fc.in_features
-        self.cnn.fc = nn.Linear(num_ftrs, int(num_ftrs/2))
-        self.fc1 = nn.Linear(int(num_ftrs/2), int(num_ftrs/2))
-        self.fc2 = nn.Linear(int(num_ftrs/2), class_num)
+
+        self.cnn.fc = nn.Linear(num_ftrs, num_ftrs)
+        # self.cnn.fc = nn.Linear(num_ftrs, int(num_ftrs/2))
+        # self.fc1 = nn.Linear(int(num_ftrs/2), int(num_ftrs/2))
+        # self.fc2 = nn.Linear(int(num_ftrs/2), class_num)
 
     def forward(self, image):
         x = self.cnn(image)
 
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        # x = F.relu(self.fc1(x))
+        # x = self.fc2(x)
         return x
 
 
-model_ft = Model(len(class_names))#models.resnet152(pretrained=True)
-#num_ftrs = model_ft.fc.in_features
+model_ft = Model(len(class_names))  # models.resnet152(pretrained=True)
+# num_ftrs = model_ft.fc.in_features
 # Alternatively, it can be generalized to nn.Linear(num_ftrs, len(class_names)).
-#model_ft.fc = nn.Linear(num_ftrs, len(class_names))
+# model_ft.fc = nn.Linear(num_ftrs, len(class_names))
 
 model_ft = model_ft.to(device)
 
@@ -235,9 +259,93 @@ optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
 # Decay LR by a factor of 0.1 every 7 epochs
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
 
-model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                       num_epochs=25)
-visualize_model(model_ft)
+# model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
+#                       num_epochs=2)
+
+data_train, target_train = model_to_numpy(model_ft, 'train')
+data_test, target_test = model_to_numpy(model_ft, 'test')
+
+print(len(data_train), len(target_train))
+
+
+best_features = TransformData.get_best_features(data_train, target_train, data_test)
+clear_dataset_train, clear_dataset_test = TransformData.get_best_dataframe(data_train, data_test, best_features)
+
+all_metric_dict = dict()
+
+scoring_method = ["accuracy", "recall", "roc_auc"]
+
+
+def scoring_methode(data_train, target_train, data_test, target_test, nb_iteration, cv, scoring_methode_str):
+    all_metric_dict.clear()
+
+    all_metric_dict["decision_tree"] = Classifiers.decision_tree(data_train, target_train, data_test, target_test, nb_iteration, cv,
+                                                     scoring_methode_str)
+    all_metric_dict["RandomForest"] = Classifiers.randomForestClassifierSearch(data_train, target_train, data_test, target_test,
+                                                                   nb_iteration, cv, scoring_methode_str)
+    all_metric_dict["Logistic_Reg"] = Classifiers.logistic_regression(data_train, target_train, data_test, target_test,
+                                                          nb_iteration, cv, scoring_methode_str)
+    all_metric_dict["Perceptron"] = Classifiers.function_perceptron(data_train, target_train, data_test, target_test, nb_iteration,
+                                                        cv, scoring_methode_str)
+    all_metric_dict["gradientBoostingClassifier"] = Classifiers.gradientBoostingClassifier_function(data_train, target_train,
+                                                                                        data_test, target_test,
+                                                                                        nb_iteration, cv,
+                                                                                        scoring_methode_str)
+    all_metric_dict["multi_level_Perceptron_Classifier"] = Classifiers.multi_level_Perceptron_Classifier(data_train, target_train,
+                                                                                             data_test, target_test,
+                                                                                             nb_iteration, cv,
+                                                                                             scoring_methode_str)
+
+
+# scoring_methode(data_train, target_train, data_test, target_test, 10, 5, scoring_method)
+scoring_methode(clear_dataset_train, target_train, clear_dataset_test, target_test, 10, 5, scoring_method)
+
+list_dict = Plot.stock_results_dictionnary(all_metric_dict)
+
+Plot.hist_plot([list_dict["test_accuracy_mean_list"], list_dict["test_accuracy_std_list"]], all_metric_dict.keys(),
+     ["accuracy_mean", "accuracy_std"], "Accuracy mean/std", 0.2)
+
+Plot.hist_plot([list_dict["test_recall_mean_list"], list_dict["test_recall_std_list"]], all_metric_dict.keys(),
+     ["recall_mean", "recall_std"], "Recall mean/std", 0.2)
+Plot.hist_plot([list_dict["test_recall_mean_list"], list_dict["test_accuracy_mean_list"], list_dict["test_roc_auc_mean_list"]],
+     all_metric_dict.keys(), ["recall", "accuracy", "roc_auc"], "Recall/Accuracy/Roc_auc comparaison", 0.2)
+
+Plot.hist_plot([list_dict["test_recall_mean_list"], list_dict["test_recall_std_list"], list_dict["test_accuracy_mean_list"],
+      list_dict["test_accuracy_std_list"], list_dict["test_roc_auc_mean_list"], list_dict["test_roc_auc_std_list"]],
+     all_metric_dict.keys(),
+     ["recall_mean", "recall_std", "accuracy_mean", "accuracy_std", "roc_auc_mean", "roc_auc_std"],
+     "Recall/Accuracy/Roc_auc comparaison", 0.1)
+
+# plot([list_dict["test_recall_mean_list"],list_dict["training_time"]], all_metric_dict.keys(), ["recall_mean","training-time"],"recall_mean/training_time",0.3)
+
+
+Plot.compare_curve_plot(all_metric_dict,list_dict["training_time"], list_dict["predict_time"], "algorithmes", "training_time", "red", "predict_time","blue")
+
+Plot.compare_curve_plot(all_metric_dict,list_dict["training_time"], list_dict["test_recall_mean_list"], "algorithmes", "training_time", "yellow", "recall_mean", "green")
+
+# model_conv = torchvision.models.resnet18(pretrained=True)
+# for param in model_conv.parameters():
+#     param.requires_grad = False
+#
+# # Parameters of newly constructed modules have requires_grad=True by default
+# num_ftrs = model_conv.fc.in_features
+# model_conv.fc = nn.Linear(num_ftrs, 2)
+#
+# model_conv = model_conv.to(device)
+#
+# criterion = nn.CrossEntropyLoss()
+#
+# # Observe that only parameters of final layer are being optimized as
+# # opposed to before.
+# optimizer_conv = optim.SGD(model_conv.fc.parameters(), lr=0.001, momentum=0.9)
+#
+# # Decay LR by a factor of 0.1 every 7 epochs
+# exp_lr_scheduler = lr_scheduler.StepLR(optimizer_conv, step_size=7, gamma=0.1)
+#
+# model_conv = train_model(model_conv, criterion, optimizer_conv,
+#                          exp_lr_scheduler, num_epochs=25)
+
+# visualize_model(model_conv)
 
 plt.ioff()
 plt.show()
