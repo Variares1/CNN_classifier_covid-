@@ -15,6 +15,8 @@ import os
 import copy
 import torch.nn.functional as F
 import torchdata as td
+
+
 class MyDataClass(Dataset):
     def __init__(self, image_path, transform=None):
         super(MyDataClass, self).__init__()
@@ -29,7 +31,7 @@ class MyDataClass(Dataset):
 
 
 plt.ion()   # interactive mode
-data_dir_all = 'data/ImageListBalanced'
+data_dir_all = 'data/ImageList'
 
 path, dirs, files = next(os.walk(data_dir_all))
 total_count = len(files)
@@ -63,7 +65,7 @@ print(len(train_dataset))
 # Apply transformations here only for train dataset
 
 # Rest of the code goes the same
-BATCH_SIZE = 2
+BATCH_SIZE = 256
 NUM_WORKER = 0
 train_dataset_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKER
